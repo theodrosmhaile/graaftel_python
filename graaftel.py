@@ -264,16 +264,18 @@ def boundedAdd(num1, num2, lwb = 0.0, upb = 1.0):
     else: return s 
     
 
-###Update the model based on a single datapoint using Adam optimization
-# - Parameters:
-#   - score: The datapoint used for the update
-#   - alpha: The alpha parameter for Adam, 0.001 by default
-#   - beta1: The beta1 parameter for Adam, 0.9 by default
-#   - beta2: The beta2 parameter for Adam, 0.99 by default
-#   - epsilon: The epsilon parameter, 1e-8 by default
-#   - alphaHebb: Learning multiplier (with alpha) to control the Hebbian learning.
+
 def oneItemAdam(score, Students, Items,studentMode, alpha= 0.001, nSkills = 4, beta1 = 0.9, beta2 = 0.999, epsilon= 1e-8, alphaHebb = 1.0):
-    
+    """
+Update the model based on a single datapoint using Adam optimization
+ - Parameters:
+   - score: The datapoint used for the update
+   - alpha: The alpha parameter for Adam, 0.001 by default
+   - beta1: The beta1 parameter for Adam, 0.9 by default
+   - beta2: The beta2 parameter for Adam, 0.99 by default
+   - epsilon: The epsilon parameter, 1e-8 by default
+   - alphaHebb: Learning multiplier (with alpha) to control the Hebbian learning.
+  """
     s = Students[score.student]
     it = Items[score.item]
     error = score.score - expectedScore(student= s, item= it,nSkills = nSkills)
@@ -314,11 +316,14 @@ def oneItemAdam(score, Students, Items,studentMode, alpha= 0.001, nSkills = 4, b
     it.experiences += 1 # redundant
 
 
-#####Calculate the average error per datapoint, either of the whole dataset, or the last loaded students.
-# - Returns: The average error
+
 
 
 def calculateError(model, student=None): ## This function computes the final error after model runs
+    """
+    Calculate the average error per datapoint, either of the whole dataset, or the last loaded students.
+     - Returns: The average error
+    """
     errors = []
     count = 0
     ## instances takes all scores, and therefore all students and questions unless a student is specified
