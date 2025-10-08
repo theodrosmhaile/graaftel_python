@@ -5,8 +5,8 @@ Written by Niels Taatgen 2024
 To train new data:
 
  1. create a new Model object by calling Model(). Perhaps called 'm'.
- 2. Initiate model with new data by calling the method m.init_model(). Passing a CSV is required here. 
-     Other parameters if different from the default should be set at this time.
+ 2. Initiate model with new data by calling the method m.init_model(data). Passing a path to a CSV file to data is required here. 
+Other parameters if different from the default should be set at this time.
  3. Finally run the method m.get_ratings()
 
 To load a model and optinally train further, perhaps with new data of the same students with new questions or the same questions with new students. 
@@ -14,6 +14,11 @@ To load a model and optinally train further, perhaps with new data of the same s
  2. load previously trained model by calling the method m.load_model(model, data). Parameters 'model' and 'data' are required.
    Other parameters will be loaded from the model file, but can be optionally set here. Note that these should be set at this time if new parameters are needed. 
  3. Run method m.get_ratings() if more training is needed. 
+
+To get ratings for one student (assumes a model 'm' has been trained or loaded):
+1. If student already exists in the model, simply run m.update_student_rating(name, item, score), by providing the name of the  
+  student, the question item, and the score they obtained. A new record will be added to the list of scores and the student's skills will be updated. 
+2. If it is a new student with no previous scores, first run m.new_student(name). Then run step 1 above. 
 
 
  Other Functions:
@@ -97,7 +102,7 @@ class Model:
         self.nskills = None #nSkills
         self.nodes = []
         
-    def save(self, name):
+    def save(self, file_name):
         """
         Save all the necessary objects as JSON to file. 
         This might also help compatibility with web apps etc hopefully
@@ -122,7 +127,7 @@ class Model:
                 }
         
         
-        with open(name + '.JSON', 'w') as fp:
+        with open(file_name + '.JSON', 'w') as fp:
             json.dump(temp, fp)
             
     def load_model(self, model, data,studentMode=False, nSkills=4, alpha = None, nEpochs=None):
@@ -185,11 +190,9 @@ class Model:
         self.studentMode = studentMode
     
     def get_ratings(self):
-        print(self.nskills)
-        print(self.nEpochs)
+        
     ### Specify a number of nEpochs to run skill rating -  make sure it starts at random points in each epoch
     ### OneItemAdam iterates over all available scores but takes only one item at a time and updates the skllils in the objects
-        
         
         for e in range(self.nEpochs):
             rand_indexes = random.sample([i for i in range(len(self.scores))], len(self.scores)) ## for random starts
@@ -198,6 +201,24 @@ class Model:
                 oneItemAdam(score = self.scores[i], Students = self.students, Items = self.items, nSkills = self.nskills, 
                            studentMode = self.studentMode, alpha= self.alpha,
                             beta1 = 0.9, beta2 = 0.999, epsilon= 1e-8, alphaHebb = 1.0)
+
+
+    def new_student(self, name):
+        
+        self.students[name] = Student(name = name, nSkills = self.nskills)
+        
+
+    def update_student_rating(self, name, item, score):
+        
+        oneItemAdam(score = Score(student=name,item=item, score=score),
+               Students=self.students,
+               Items=self.items, 
+               studentMode=self.studentMode,
+               nSkills=self.nskills,
+               alpha=self.alpha)
+
+        self.scores[len(self.scores)] = Score(student=name, item=item, score=score)
+        
        
        
     
