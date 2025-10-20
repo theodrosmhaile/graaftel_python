@@ -91,6 +91,9 @@ class node:
         self.connects_to = []
         self.height = sum(self.skills) #this is used to limit connections to the layer immediately above
         self.questions = []
+    
+    def __repr__(self):
+        return "Node %s; %s total questions" % (self.name, str(len(self.questions)))
 
 class Model:
     def __init__(self):
@@ -368,6 +371,9 @@ def make_nodes(model, graph=False, threshold=0.5):
     
 ### iterate through the "connect from" nodes
     for n1 in nodes:
+
+        ## add questions to ids to Nodes
+        nodes[n1].questions = [items_binary[i][0] for i in range(1,len(items_binary)) if items_binary[i][2]==n1]
         
         ### iterate through the "connect to" nodes
         for n2 in nodes:
@@ -429,8 +435,11 @@ def make_nodes(model, graph=False, threshold=0.5):
                  arrows=True, 
                  node_size = 1200, 
                 node_color='#7fcdbb')
+    
 
-def make_js_nodes(nodes):
+def make_js_nodes(model):
+
+    nodes=model.nodes
     
     js_out = {'edges':
      [{'data':{'source':n1, 'target':n2}} for n1 in nodes for n2 in nodes[n1].connects_to]
