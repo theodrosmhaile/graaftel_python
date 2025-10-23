@@ -212,6 +212,13 @@ class Model:
         
 
     def update_student_rating(self, name, item, score):
+        """
+        Input:
+        name: student name
+        item: question item ID
+        score: student's score on question item
+        
+        """
         
         oneItemAdam(score = Score(student=name,item=item, score=score),
                Students=self.students,
