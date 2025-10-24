@@ -42,7 +42,7 @@ import math
 import random
 import networkx as nx
 import json
-
+import warnings
 
 ## Classes
 
@@ -104,6 +104,15 @@ class Model:
         self.data = []#dat
         self.nskills = None #nSkills
         self.nodes = []
+        self.decayingAlpha=True
+        self.baseAlpha = 0
+        self.studentAlpha = 0
+        self.StudentMode=False
+
+    def __repr__(self):
+        return "Alpha: %s nSkills:%s Student Mode:%s Decaying Alpha: %s" % (self.alpha, self.nskills, self.StudentMode, self.decayingAlpha)
+        
+        
         
     def save(self, file_name):
         """
@@ -113,6 +122,10 @@ class Model:
         temp = {"alpha": self.alpha,
                  "nEpochs": self.nEpochs,
                  "nSkills":self.nskills,
+                "baseAlpha" :self.baseAlpha,
+                "studentAlpha":self.studentAlpha, 
+                "decayingAlpha": self.decayingAlpha,
+                
                  "items": { str(i):{ "skills":self.items[i].skills, 
                                      "name" : str(i), 
                                      "m" : self.items[i].m, 
@@ -133,7 +146,7 @@ class Model:
         with open(file_name + '.JSON', 'w') as fp:
             json.dump(temp, fp)
             
-    def load_model(self, model, data,studentMode=False, nSkills=4, alpha = None, nEpochs=None):
+    def load_model(self, model, data,studentMode=False, nSkills=4, decayingAlpha = True,baseAlpha=0, studentAlpha=None, alpha = None, nEpochs=None):
         """
         Revert the JSON to dictionaries of objects to continue running in models. 
         Have to be careful not to lose data. 
@@ -171,9 +184,19 @@ class Model:
         #self.nodes = M['nodes']
         self.nEpochs = nEpochs if nEpochs is not None else M['nEpochs']
         self.alpha = alpha if alpha is not None else  M['alpha']
+        self.decayingAlpha= decayingAlpha if decayingAlpha is not None else M['decayingAlpha']
+        self.baseAlpha= baseAlpha
+        self.studentAlpha = studentAlpha if studentAlpha is not None else M['studentAlpha']
         self.studentMode  = studentMode 
 
-    def init_model(self, data, studentMode=False, nSkills=4, alpha = 0.0005, nEpochs=1000):
+        if self.decayingAlpha == False and self.alpha > 0.001:
+            warnings.warn("check decaying alpha status and alpha value. Decaying alpha is OFF and alpha maybe too high")
+        if self.decayingAlpha == True and self.alpha < 0.01:
+            warnings.warn("check decaying alpha status and alpha value. Decaying alpha is ON and alpha maybe too low")
+            
+        
+
+    def init_model(self, data, studentMode=False, nSkills=4, decayingAlpha=True, baseAlpha=0, studentAlpha=0,  alpha = 0.05, nEpochs=1000):
        #
     ## Import data
         self.data = pd.read_csv(data, header=None)
@@ -191,6 +214,9 @@ class Model:
         self.alpha = alpha
         self.nEpochs = nEpochs
         self.studentMode = studentMode
+        self.decayingAlpha = decayingAlpha
+        self.baseAlpha = baseAlpha
+        self.studentAlpha = studentAlpha
     
     def get_ratings(self):
         
@@ -202,8 +228,11 @@ class Model:
             for i in rand_indexes:
     
                 oneItemAdam(score = self.scores[i], Students = self.students, Items = self.items, nSkills = self.nskills, 
-                           studentMode = self.studentMode, alpha= self.alpha,
-                            beta1 = 0.9, beta2 = 0.999, epsilon= 1e-8, alphaHebb = 1.0)
+                           studentMode = self.studentMode, 
+                            alpha= self.alpha, 
+                            decayingAlpha=self.decayingAlpha,
+                            baseAlpha=self.baseAlpha,
+                            studentAlpha= self.studentAlpha)
 
 
     def new_student(self, name):
@@ -225,7 +254,10 @@ class Model:
                Items=self.items, 
                studentMode=self.studentMode,
                nSkills=self.nskills,
-               alpha=self.alpha)
+               alpha=self.alpha, 
+               decayingAlpha=self.decayingAlpha,
+               baseAlpha=self.baseAlpha,
+               studentAlpha= self.studentAlpha)
 
         self.scores[len(self.scores)] = Score(student=name, item=item, score=score)
         
@@ -275,7 +307,7 @@ def boundedAdd(num1, num2, lwb = 0.0, upb = 1.0):
     
 
 
-def oneItemAdam(score, Students, Items,studentMode, alpha= 0.001, nSkills = 4, beta1 = 0.9, beta2 = 0.999, epsilon= 1e-8, alphaHebb = 1.0):
+def oneItemAdam(score, Students, Items,studentMode, decayingAlpha=True, baseAlpha=0, studentAlpha=0,  alpha = 0.05, nSkills = 4):
     """
 Update the model based on a single datapoint using Adam optimization
  - Parameters:
@@ -285,7 +317,17 @@ Update the model based on a single datapoint using Adam optimization
    - beta2: The beta2 parameter for Adam, 0.99 by default
    - epsilon: The epsilon parameter, 1e-8 by default
    - alphaHebb: Learning multiplier (with alpha) to control the Hebbian learning.
+   changes:
+   New parameters baseAlpha, studentAlphaActual, decayingAlpha
   """
+    ## Parameters that don't change often
+    beta1 = 0.9
+    beta2 = 0.999
+    epsilon= 1e-8
+    alphaHebb = 1.0
+
+    studentAlphaActual = alpha if studentAlpha==0 else studentAlpha
+    
     s = Students[score.student]
     it = Items[score.item]
     error = score.score - expectedScore(student= s, item= it,nSkills = nSkills)
@@ -312,14 +354,30 @@ Update the model based on a single datapoint using Adam optimization
         vhatS = s.v[i] / (1 - pow(beta2, s.t))
 
         if not studentMode: 
-            it.skills[i] = boundedAdd(it.skills[i], -alpha * mhatI / (math.sqrt(vhatI) + epsilon))
-            s.skills[i] = boundedAdd(s.skills[i],  -alpha * mhatS / (math.sqrt(vhatS) + epsilon))
-        else: 
-            #print(s.skills)
-            s.skills[i] = boundedAdd(s.skills[i], -alpha * sGradient)
-        
+            #primGraphRecalculate = True
+            if decayingAlpha:
+                it.skills[i] = boundedAdd(it.skills[i], -(alpha / math.sqrt(it.t)) * mhatI / (math.sqrt(vhatI) + epsilon)) ## this version adds decaying alpha: alpha/sqrt(n encounters)
+                
+                sAdjust = -mhatS / (math.sqrt(vhatS) + epsilon)
+                s.skills[i] = boundedAdd(s.skills[i], ((baseAlpha if sAdjust > 0 else 0) + studentAlphaActual/math.sqrt(s.t)) * sAdjust) ##This version tries to always increase student skills
 
-        
+            else:
+                it.skills[i] = boundedAdd(it.skills[i], -alpha * mhatI / (math.sqrt(vhatI) + epsilon))
+                s.skills[i] = boundedAdd(s.skills[i],  -studentAlphaActual * mhatS / (math.sqrt(vhatS) + epsilon)) # This version adds new student parameter studentAlphaActual
+
+        else:
+            if decayingAlpha:
+                sAdjust = -sGradient
+                s.skills[i] = boundedAdd(s.skills[i],  ((baseAlpha if sAdjust > 0 else 0) + studentAlphaActual/math.sqrt(s.t)) * sAdjust)
+            else:
+                s.skills[i] = boundedAdd(s.skills[i], -studentAlphaActual * sGradient)
+                
+                
+           # it.skills[i] = boundedAdd(it.skills[i], -alpha * mhatI / (math.sqrt(vhatI) + epsilon))
+            #s.skills[i] = boundedAdd(s.skills[i],  -alpha * mhatS / (math.sqrt(vhatS) + epsilon))
+       # else: 
+            
+        #    s.skills[i] = boundedAdd(s.skills[i], -alpha * sGradient)
     it.t += 1
     s.t += 1
 
@@ -356,7 +414,7 @@ def calculateError(model, student=None): ## This function computes the final err
             count += 1
             
         except:
-            print('item:',model.scores[s].item,' not in Train data for student ',model.scores[s].student )
+            #print('item:',model.scores[s].item,' not in Train data for student ',model.scores[s].student )
             pass
     #print('error based on ', str(count), ' items')              
     return errors
