@@ -8,7 +8,7 @@ See here for the original Swift implementation: https://github.com/ntaatgen/ELO
 
  2. Initiate model with new data by calling the method m.init_model(data). Passing a path to a CSV file to data is required here. Other parameters if different from the default should be set at this time.
  
- 3. Finally run the method m.get_ratings()
+ 3. Run the method m.run_training()
 
 ## To load a model and optinally train further, perhaps with new data of the same students with new questions or the same questions with new students. 
 
@@ -16,7 +16,7 @@ See here for the original Swift implementation: https://github.com/ntaatgen/ELO
  
  2. load previously trained model by calling the method m.load_model(model, data). Parameters 'model' and 'data' are required. Other parameters will be loaded from the model file, but can be optionally set here. Note that these should be set at this time if new parameters are needed. 
  
- 3. Run method m.get_ratings() if more training is needed. 
+ 3. Run method m.run_training() if more training is needed. 
 
 ## To get ratings for one student (assumes a model 'm' has been trained and/or loaded):
 1. If student already exists in the model, simply run m.update_student_rating(name, item, score), by providing the name of the  
