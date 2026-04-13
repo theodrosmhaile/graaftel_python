@@ -1,25 +1,23 @@
+
 """
-Written by Niels Taatgen 2024
- Python implementation by TMH
 
 To train new data:
 
  1. create a new Model object by calling Model(). Perhaps called 'm'.
  2. Initiate model with new data by calling the method m.init_model(data). Passing a path to a CSV file to data is required here.
 Other parameters if different from the default should be set at this time.
- 3. Finally run the method m.get_ratings()
+ 3. Run the method m.run_training() to train model. 
 
-To load a model and optinally train further, perhaps with new data of the same students with new questions or the same questions with new students.
+To load a model and optinally train further
  1. create a new Model object by calling Model(). perhaps called 'm'.
  2. load previously trained model by calling the method m.load_model(model, data). Parameters 'model' and 'data' are required.
    Other parameters will be loaded from the model file, but can be optionally set here. Note that these should be set at this time if new parameters are needed.
- 3. Run method m.get_ratings() if more training is needed.
+ 3. Run method m.run_training() if more training is needed.
 
 To get ratings for one student (assumes a model 'm' has been trained or loaded):
 1. If student already exists in the model, simply run m.update_student_rating(name, item, score), by providing the name of the
   student, the question item, and the score they obtained. A new record will be added to the list of scores and the student's skills will be updated.
 2. If it is a new student with no previous scores, first run m.new_student(name). Then run step 1 above.
-
 
  Other Functions:
 
@@ -33,6 +31,10 @@ the predicted error for that student only is returned.
 3. Get_recommendations(model, student=None)
 This returns the Id's and predicted scores of all the questions that fall with-in the range of "acceptable difficulty" for the student.
 If student is set to an Id, only that student's recommended questions are returned.
+
+Written by Niels Taatgen (c) 2024
+Python implementation Theodros Haile (c) 2026
+
 """
 
 
@@ -44,10 +46,9 @@ import networkx as nx
 import json
 import warnings
 
-## Classes
 
-### student Class
 class Student:
+    """Student Class """ 
     def __init__(self, name, nSkills, skills=None, m=None, v=None, t=None):
         self.skills = skills if skills is not None else[random.uniform(0.15, 0.18) for i in range(nSkills)]
         self.name = name
@@ -59,9 +60,8 @@ class Student:
     def __repr__(self):
         return " %s :%s" % (self.name, [round(self.skills[i],2) for i in range(len(self.skills))])
 
-
-### Question item Class
 class Item:
+    """Question Item Class """
     def __init__(self, name, nSkills, skills=None, m=None, v=None, t=None):
         self.skills = skills if skills is not None else [random.uniform(0.48, 0.52) for i in range(nSkills)]
         self.name = name
@@ -73,8 +73,9 @@ class Item:
     def __repr__(self):
         return "%s %s" % (self.name, [round(self.skills[i],2) for i in range(len(self.skills))])
 
-### Question item Class
 class Score:
+    """Student - Question item score pair
+    """
     def __init__(self, student, item, score):
         self.student = student
         self.item = item
@@ -84,18 +85,23 @@ class Score:
         return "Score student:%s item:%s score:%s" % (self.student, self.item, self.score)
 
 class node:
-    def __init__(self, binary_vector, str_id):
+    """Node class"""
+    def __init__(self, binary_vector, str_id, connects_to=None, questions=None):
 
         self.skills = binary_vector
         self.name = str_id
-        self.connects_to = []
+        self.connects_to = [] if connects_to is None else connects_to
         self.height = sum(self.skills) #this is used to limit connections to the layer immediately above
-        self.questions = []
+        self.questions = [] if questions is None else questions
 
     def __repr__(self):
         return "Node %s; %s total questions" % (self.name, str(len(self.questions)))
 
 class Model:
+    """
+    Model class that contains student, score, question item and node objects. Training parameters are also contained in this model. 
+    Requires no input when called. A model class that is instantiated has to be initialized with default parameters for use or loaded from file. 
+    """
     def __init__(self):
 #         Scores, Students, Items, dat, nSkills
         self.scores = {}#Scores
@@ -105,6 +111,7 @@ class Model:
         self.nskills = None #nSkills
         self.nodes = []
         self.decayingAlpha=True
+        self.alpha = None
         self.baseAlpha = 0
         self.studentAlpha = 0
         self.StudentMode=False
@@ -114,11 +121,10 @@ class Model:
         return "Alpha: %s nSkills:%s Student Mode:%s Decaying Alpha: %s" % (self.alpha, self.nskills, self.StudentMode, self.decayingAlpha)
 
 
-
     def save(self, file_name):
         """
-        Save all the necessary objects as JSON to file.
-        This might also help compatibility with web apps etc hopefully
+        Save all the necessary objects (model) as JSON to file.
+        file_name: Specifiy a file name to save to disk. This is required. 
         """
         temp = {"alpha": self.alpha,
                  "nEpochs": self.nEpochs,
@@ -134,7 +140,8 @@ class Model:
                                      "t": self.items[i].t
                                    } for i in self.items
                           },
-                 "nodes": { str(i): {'height': self.nodes[i].height,'connects_to': self.nodes[i].connects_to} for i in self.nodes},
+                 "nodes": { str(i): {'questions': self.nodes[i].questions,
+                                     'connects_to': self.nodes[i].connects_to} for i in self.nodes},
                  "students": {str(s): {'skills': self.students[s].skills,
                                        "m" : self.students[s].m,
                                        "v" : self.students[s].v,
@@ -144,20 +151,33 @@ class Model:
                 }
 
 
+
         with open(file_name + '.JSON', 'w') as fp:
             json.dump(temp, fp)
 
-    def load_model(self, model, data, studentMode=False, nSkills=4, decayingAlpha = True,baseAlpha=0, studentAlpha=None, alpha = None, nEpochs=None):
+    def load_model(self, model, data, studentMode=False, nSkills=None, decayingAlpha = True,baseAlpha=0, studentAlpha=None, alpha = None, nEpochs=None):
         """
-        Revert the JSON to dictionaries of objects to continue running in models.
-        Have to be careful not to lose data.
+       Loads model from saved file. Expects JSON. 
+       
+        model: JSON structured file of previously trained model is required. 
+        data: csv containing student Id's, Question Id's and associated scores, in columns 0,1 and 2 respectively. 
+             A file without headers is required. A different dataset of new students, or questions, with some overlap can 
+             be loaded along with a previously trained model for new training or figuring the skills of new students (pre-trained 
+             questions required in this case). 
+        studentMode: Default is False. StudentMode prevents updating skill vectors for question items, and expects that a student is 
+                    interacting with the system (real or simulation). 
+        nSkills: Default is 4. This specifies the length of the vector. The value from the pre-existing model is loaded but can also be set here. 
+        decayingAlpha: Default is True. Model training works best with a relatively high learning rate that decays with respect to the square root
+                        of the number of instances (student-question pairs). 
+        ...
+        alpha: Learning rate for skill updating. The value from the pre-existing model is loaded but can also be set here.
+        nEpochs: Number of training epochs. The value from the pre-existing model is loaded but can also be set here.
         """
 
         with open(model) as fp:
             M = json.load(fp)
 
 
-       # M = m_import#['model']
         if(type(data) is str):
             self.data = pd.read_csv(data, header=None)
         else:
@@ -211,7 +231,7 @@ class Model:
 
 
         self.nskills = nSkills if nSkills is not None else M['nSkills']
-        #self.nodes = M['nodes']
+        self.nodes = M['nodes']
         self.nEpochs = nEpochs if nEpochs is not None else M['nEpochs']
         self.alpha = alpha if alpha is not None else  M['alpha']
         self.decayingAlpha= decayingAlpha if decayingAlpha is not None else M['decayingAlpha']
@@ -224,11 +244,27 @@ class Model:
         if self.decayingAlpha == True and self.alpha < 0.01:
             warnings.warn("check decaying alpha status and alpha value. Decaying alpha is ON and alpha maybe too low")
 
-
-
     def init_model(self, data, studentMode=False, nSkills=4, decayingAlpha=True, baseAlpha=0, studentAlpha=0,  alpha = 0.1, nEpochs=1000):
-       #
-    ## Import data
+        """
+        Initializes training parameters and prepares for training a new Graph. Data is required. Other values can be left at default, but update
+        depending on data size and quality for the lowest prediction error. 
+
+        data: csv containing student Id's, Question Id's and associated scores, in columns 0,1 and 2 respectively. 
+             A file without headers is required. 
+        studentMode: Default is False. StudentMode prevents updating skill vectors for question items, and expects that a student is 
+                    interacting with the system (real or simulation). 
+        nSkills: Default is 4. This specifies the length of the vector. Specify this value when calling init_model, if different from default. 
+        decayingAlpha: Default is True. Model training works best with a relatively high learning rate that decays with respect to the square root
+                        of the number of instances (student-question pairs). 
+        ...
+        alpha: Learning rate for skill updating. Default is 0.1. A slightly higher value might be more desirable in Student Mode. Set this value
+                at model initialization (init_model()) if a different value than the default is desired. 
+        nEpochs: Number of training epochs. Default is 1000 epochs. Set this value at model initialization (init_model()) 
+                 if a different value than the default is desired.  
+
+       """
+
+      ## Import data
         if(type(data) is str):
             self.data = pd.read_csv(data, header=None)
 
@@ -253,13 +289,13 @@ class Model:
         self.baseAlpha = baseAlpha
         self.studentAlpha = studentAlpha
 
-    def get_ratings(self):
-
-    ### Specify a number of nEpochs to run skill rating -  make sure it starts at random points in each epoch
-    ### OneItemAdam iterates over all available scores but takes only one item at a time and updates the skllils in the objects
-
+    def run_training(self):
+        """
+        Execute training of initalized model. 
+        This calls OneItemAdam() over the whole data, for the specified number of epochs, taking random starts. 
+        """
         for e in range(self.nEpochs):
-            if e % 500 == 0:
+            if e % 200 == 0:
                 print('Running Epoch', str(e), ' ...')
             rand_indexes = random.sample([i for i in range(len(self.scores))], len(self.scores)) ## for random starts
             for i in rand_indexes:
@@ -271,16 +307,22 @@ class Model:
                             baseAlpha=self.baseAlpha,
                             studentAlpha= self.studentAlpha)
 
-
     def new_student(self, name):
+        """
+        When starting a new training session on a previously trained model, or when using a trained model in student mode,
+        all new students have to be "registered" and initialized.
 
+        name: name or student ID of the student is required. 
+        """
         self.students[name] = Student(name = name, nSkills = self.nskills)
-
 
     def update_student_rating(self, name, item, score):
         """
-        Input:
-        name: student name
+        This updates a student's skill vector once, when called. This is useful in Student mode, when a (real or simulated)
+        student completes exercises and skills have to be updated to get a recommendation for the next one. Depending on whether StudentMode
+        is turned on at the time of model loading, the question items will also be updated when studentMode is set to False. 
+      
+        name: student name or ID number. 
         item: question item ID
         score: student's score on question item
 
@@ -298,22 +340,18 @@ class Model:
 
         self.scores[len(self.scores)] = Score(student=name, item=item, score=score)
 
-
-
-
-
-## Calculate the predicted score base on a single skill, given a student score and an item score.
-   # - Parameters:
-    #   - studentDifficulty: The student score, between 0 and 1.
-    #   - itemDifficulty: The item score, between 0 and 1.
-    # - Returns: The expected score for one skill.
-
-
 def calcProb(studentDifficulty, itemDifficulty):
+    """ 
+    Calculate the predicted score base on a single skill, given a student score and an item score.
+    - Parameters:
+        - studentDifficulty: The student score, between 0 and 1.
+        - itemDifficulty: The item score, between 0 and 1.
+        - Returns: The expected score for one skill.
+    """
     return 1 - itemDifficulty + itemDifficulty * studentDifficulty
 
-## expected score function
 def expectedScore(student, item, nSkills, leaveOut=None):
+    """ Compute the expected score given the student and item vectors"""
     p = 1
 
     for i in range(nSkills):
@@ -323,15 +361,14 @@ def expectedScore(student, item, nSkills, leaveOut=None):
 
     return p
 
-
-#####Add to two numbers, but keep them between a lowerbound and an upperbound
-# - Parameters:
-#   - num1: The first number
-#   - num2: The second number
-#   - lwb: The lowerbound, 0 by default
-#   - upb: The upperbound, 1 by default
-# - Returns: The bounded sum
 def boundedAdd(num1, num2, lwb = 0.0, upb = 1.0):
+    """Add to two numbers, but keep them between a lowerbound and an upperbound
+       - Parameters:
+       - num1: The first number
+       - num2: The second number
+       - lwb: The lowerbound, 0 by default
+       - upb: The upperbound, 1 by default
+       - Returns: The bounded sum"""
 
     s = num1 + num2
     if s < lwb:
@@ -342,11 +379,9 @@ def boundedAdd(num1, num2, lwb = 0.0, upb = 1.0):
 
     else: return s
 
-
-
-def oneItemAdam(score, Students, Items,studentMode, decayingAlpha=True, baseAlpha=0, studentAlpha=0,  alpha = 0.05, nSkills = 4):
+def oneItemAdam(score, Students, Items,studentMode, decayingAlpha=True, baseAlpha=0, studentAlpha=0,  alpha = 0.1, nSkills = 4):
     """
-Update the model based on a single datapoint using Adam optimization
+    Update the model based on a single datapoint using Adam optimization
  - Parameters:
    - score: The datapoint used for the update
    - alpha: The alpha parameter for Adam, 0.001 by default
@@ -420,14 +455,12 @@ Update the model based on a single datapoint using Adam optimization
 
     it.experiences += 1 # redundant
 
-
-
-
-
-def calculateError(model, student=None): ## This function computes the final error after model runs
+def calculateError(model, student=None): 
     """
-    Calculate the average error per datapoint, either of the whole dataset, or the last loaded students.
-     - Returns: The average error
+     Calculate the average error per datapoint, either of the whole dataset, or the last loaded students.
+     - Returns: The error for the whole dataset. 
+     model: supplying a model is required. 
+     student: if a student Id or name is provided, the error for that student only will be calculated. 
     """
     errors = []
     count = 0
@@ -456,10 +489,19 @@ def calculateError(model, student=None): ## This function computes the final err
     #print('error based on ', str(count), ' items')
     return errors
 
-
 def make_nodes(model, graph=False, threshold=0.5):
+    """ Generate nodes with connections to display a graph. 
+
+        model: passing a model is required. 
+
+        graph: default is False. Plot a simple graph using the computed nodes.
+
+        threshold: Default is 0.5. Questions items are clustered into nodes by applying a thershold to the skill vectors
+         which specify whether a "skill" is required or not. A high threshold is restrictive and will result in few nodes. 
+    """
+
     ## first convert the skill vectors to binary using the provided data and threshold. Also make str names
-    items_binary = [[[q],
+    items_binary = [[q,
                  [int(e >= threshold) for e in model.items[q].skills],
                  ''.join(map(str, [int(e >= threshold) for e in model.items[q].skills]))
                 ] for q in model.items.keys()
@@ -538,36 +580,65 @@ def make_nodes(model, graph=False, threshold=0.5):
                  node_size = 1200,
                 node_color='#7fcdbb')
 
-
 def make_js_nodes(model):
-
+    """Generates a string formatted in javascript syntax that can be used to display a basic graph on a web app.
+    """
     nodes=model.nodes
-
     js_out = {'edges':
      [{'data':{'source':n1, 'target':n2}} for n1 in nodes for n2 in nodes[n1].connects_to]
     }
     return js_out
 
-def get_recommendations(model, student=None):
+def get_recommendations(model, student=None , criterion=0.7, node=None, noise = 0.01):
+    """ Get recommended question(s) for a student(s), given a pre-specified criterion for a target score. Returns a dict
 
-    def apply_criterion(val):
-        test =  val < 0.95 #val > 0.65 and .75
-        return test
-    #### harder or easier also
-    ## how to step
-    students = [student] if student is not None else model.students
-    rec_items = {}
-    items = model.items
+        model: a model object is required. 
+
+        student: Specify the ID or name of a student to get recommended question items. 
+        Defaults to None, which computes recommended questions for all students in the model. 
+
+        criterion: The target score or expected accuracy for recommending questions. Default to 0.7 (70% accuracy). Question items should not be too
+        difficult (below 60% expected accuracy) or to easy (greater than 80% accuracy).  
+        
+        node: Specify a node to get recommended questions for that node only. Defaults to None, which returns recommendations from all
+        nodes. 
+
+        noise: Default value 0.01. A small amount of randomness can be set to select questions around the specified target score. Best kept below 0.1. 
+
+    """
+
+    def softmax(ES):
+        x = np.exp(1 - np.abs([i - criterion for i in ES]) / noise)
+        return x / sum(x)
+
+    def draw(x):
+        y = softmax(x)
+        z = np.random.uniform(0, 1)
+        i = 0
+        acc = y[0]
+        while acc < z:
+            i = i + 1
+            acc = acc + y[i]
+        return i
+  
+    students = {student:model.students[student]} if student is not None else model.students
+    recommended_items = {}
+    items = {i: model.items[i] for i in model.nodes[node].questions} if node is not None else model.items
+    item_ids = [i for i in items.keys()]
+
     for s in students:
-        es = []
+        recommended_item = []
+        expected_scores =[]
         for i in items:
+            expected_scores.append(expectedScore(student = model.students[s], 
+                                         item = items[i], 
+                                         nSkills=model.nskills)
+                                         )
 
-            es_temp = expectedScore(student = model.students[s], item = items[i], nSkills=model.nskills)
-
-            if apply_criterion(es_temp):
-                es.append([es_temp,i ])
-
-        es.sort()
-        rec_items[model.students[s].name] = es
-
-    return rec_items
+        
+        rec_item = draw(expected_scores)
+    
+        recommended_items[model.students[s].name] = [(item_ids[rec_item],
+                                              expected_scores[rec_item])]
+        
+    return recommended_items
