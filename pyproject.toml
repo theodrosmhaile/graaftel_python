@@ -1,3 +1,24 @@
 [build-system]
 requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "graaftel"
+version = "1.0.0"
+authors = [
+{name="Niels Taatgen", email="n.a.taatgen@rug.nl"},
+{name="Theodros Haile", email="theodrosmhaile@live.com"}
+]
+description = "A general purpose, multi-dimensional skill tracing algorithm."
+readme = "README.md"
+requires-python= ">=3.9"
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "GPL-3.0"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/theodrosmhaile/graaftel_python"
