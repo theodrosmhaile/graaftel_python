@@ -12,6 +12,11 @@ authors = [
 description = "A general purpose, multi-dimensional skill tracing algorithm."
 readme = "README.md"
 requires-python= ">=3.9"
+dependencies=[
+"numpy", 
+"pandas",
+"networkx"
+]
 
 classifiers = [
     "Programming Language :: Python :: 3",
