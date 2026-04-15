@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "graaftel"
-version = "1.0.0"
+version = "1.0.1"
 authors = [
 {name="Niels Taatgen", email="n.a.taatgen@rug.nl"},
 {name="Theodros Haile", email="theodrosmhaile@live.com"}
